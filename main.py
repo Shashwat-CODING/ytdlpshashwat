@@ -1,10 +1,5 @@
-# requirements.txt
-fastapi==0.104.1
-uvicorn==0.24.0
-yt-dlp==2023.11.16
-python-dotenv==1.0.0
-
 # main.py
+import os
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 import yt_dlp
@@ -15,7 +10,7 @@ app = FastAPI(title="YouTube Audio Stream API")
 # Configure CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Specify your allowed origins in production
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -34,13 +29,11 @@ def get_audio_info(video_url: str) -> Dict:
             info = ydl.extract_info(video_url, download=False)
             formats = info.get('formats', [])
             
-            # Filter for audio-only formats
             audio_formats = [f for f in formats if f.get('acodec') != 'none' and f.get('vcodec') == 'none']
             
             if not audio_formats:
                 raise HTTPException(status_code=404, detail="No audio streams found")
             
-            # Get best quality audio
             best_audio = max(audio_formats, key=lambda x: x.get('abr', 0))
             
             return {
@@ -61,3 +54,9 @@ def read_root():
 def get_audio_stream(video_id: str):
     video_url = f"https://www.youtube.com/watch?v={video_id}"
     return get_audio_info(video_url)
+
+# Add this at the end of main.py
+if __name__ == "__main__":
+    import uvicorn
+    port = int(os.environ.get("PORT", 8000))
+    uvicorn.run("main:app", host="0.0.0.0", port=port, reload=True)
