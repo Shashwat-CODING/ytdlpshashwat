@@ -1,45 +1,63 @@
-from flask import Flask, jsonify
+# requirements.txt
+fastapi==0.104.1
+uvicorn==0.24.0
+yt-dlp==2023.11.16
+python-dotenv==1.0.0
+
+# main.py
+from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 import yt_dlp
+from typing import Dict, Optional
 
-app = Flask(__name__)
+app = FastAPI(title="YouTube Audio Stream API")
 
-def get_audio_url(video_url):
-    """Extract audio stream URL from YouTube video."""
+# Configure CORS
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Specify your allowed origins in production
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+def get_audio_info(video_url: str) -> Dict:
     ydl_opts = {
         'format': 'bestaudio',
-        'extract_flat': True,
         'quiet': True,
-        'no_warnings': True
+        'no_warnings': True,
+        'extract_flat': True,
     }
     
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            # Extract video information
             info = ydl.extract_info(video_url, download=False)
-            
-            # Get the best audio format
             formats = info.get('formats', [])
+            
+            # Filter for audio-only formats
             audio_formats = [f for f in formats if f.get('acodec') != 'none' and f.get('vcodec') == 'none']
             
-            if audio_formats:
-                # Return the highest quality audio stream URL
-                best_audio = max(audio_formats, key=lambda f: f.get('abr', 0))
-                return {
-                    'success': True,
-                    'url': best_audio.get('url'),
-                    'format': best_audio.get('format'),
-                    'bitrate': best_audio.get('abr')
-                }
-            else:
-                return {'success': False, 'error': 'No audio stream found'}
+            if not audio_formats:
+                raise HTTPException(status_code=404, detail="No audio streams found")
+            
+            # Get best quality audio
+            best_audio = max(audio_formats, key=lambda x: x.get('abr', 0))
+            
+            return {
+                'title': info.get('title'),
+                'url': best_audio.get('url'),
+                'format': best_audio.get('format'),
+                'filesize': best_audio.get('filesize'),
+                'abr': best_audio.get('abr'),
+            }
     except Exception as e:
-        return {'success': False, 'error': str(e)}
+        raise HTTPException(status_code=400, detail=str(e))
 
-@app.route('/audio/<video_id>')
-def get_youtube_audio(video_id):
-    video_url = f'https://www.youtube.com/watch?v={video_id}'
-    result = get_audio_url(video_url)
-    return jsonify(result)
+@app.get("/")
+def read_root():
+    return {"message": "YouTube Audio Stream API"}
 
-if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=8080)
+@app.get("/audio/{video_id}")
+def get_audio_stream(video_id: str):
+    video_url = f"https://www.youtube.com/watch?v={video_id}"
+    return get_audio_info(video_url)
